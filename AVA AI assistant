@@ -1,0 +1,269 @@
+import datetime
+import platform
+import subprocess
+import webbrowser
+import pyttsx3
+import requests
+import speech_recognition as sr
+import psutil
+import wikipediaapi
+from pytube import YouTube
+
+class AVAAssistant:
+    def __init__(self):
+        self.recognizer = sr.Recognizer()
+        self.in_assistant_mode = False
+        self.wiki_wiki = wikipediaapi.Wikipedia('en')
+
+    def get_audio(self):
+        with sr.Microphone() as source:
+            print("Listening...")
+            self.recognizer.adjust_for_ambient_noise(source)
+
+            try:
+                audio = self.recognizer.listen(source, timeout=5)
+                text = self.recognizer.recognize_google(audio)
+                print("You said:", text)
+                return text
+            except sr.UnknownValueError:
+                print("Sorry, could not understand audio.")
+                return None
+            except sr.RequestError as e:
+                print(f"Could not request results from Google Speech Recognition service; {e}")
+                return None
+
+
+    def text_to_speech(self, text):
+        engine = pyttsx3.init()
+        female_voice_id = 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\TTS_MS_EN-GB_HAZEL_11.0'
+        engine.setProperty('voice', female_voice_id)
+        engine.say(text)
+        engine.runAndWait()
+
+    def search_wikipedia(self, query):
+        page_py = self.wiki_wiki.page(query)
+
+        if page_py.exists():
+            summary = page_py.summary[:400]
+            print("Wikipedia Summary:", summary)
+            self.text_to_speech(f"Here is a summary from Wikipedia: {summary}")
+        else:
+            self.text_to_speech(f"Sorry, I couldn't find information about {query} on Wikipedia.")
+
+    def search_web(self, query):
+        url = f"https://www.google.com/search?q={query}"
+        webbrowser.open(url)
+        self.text_to_speech(f"Here are the search results for {query}.")
+        
+    def search_youtube(self, query):
+        try:
+            search_url = f"https://www.youtube.com/results?search_query={query}"
+            response = requests.get(search_url)
+            video_ids = re.findall(r"watch\?v=(\S{11})", response.text)
+
+            if video_ids:
+                video_url = f"https://www.youtube.com/watch?v={video_ids[0]}"
+                self.text_to_speech(f"Here is a video related to {query}.")
+                webbrowser.open(video_url)
+            else:
+                self.text_to_speech(f"Sorry, I couldn't find any YouTube videos related to {query}.")
+        except Exception as e:
+            print(f"Error searching YouTube: {e}")
+            self.text_to_speech("Sorry, I encountered an error while searching YouTube.")
+
+    def create_todo_list(self):
+        tasks = []
+        self.text_to_speech("Sure! Let's create a to-do list. Say 'done' when you finish.")
+
+        while True:
+            task = self.get_audio()
+            if task.lower() == 'done':
+                break
+            else:
+                tasks.append(task)
+
+        if tasks:
+            self.text_to_speech("Great! Here is your to-do list:")
+            for i, task in enumerate(tasks, start=1):
+                self.text_to_speech(f"{i}. {task}")
+        else:
+            self.text_to_speech("You didn't add any tasks to the to-do list.")
+
+    def set_reminder(self):
+        self.text_to_speech("Sure! What would you like to be reminded of?")
+        reminder_text = self.get_audio()
+
+        self.text_to_speech("When would you like to be reminded? Please specify the time.")
+
+        while True:
+            reminder_time = self.get_audio()
+            if reminder_time:
+                try:
+                    datetime.datetime.strptime(reminder_time, "%I:%M %p")
+                    break
+                except ValueError:
+                    self.text_to_speech("Sorry, I couldn't understand the time. Please try again.")
+            else:
+                self.text_to_speech("Sorry, I didn't hear the time. Please specify the time again.")
+
+        self.text_to_speech(f"Okay! I'll remind you to {reminder_text} at {reminder_time}.")
+
+    def schedule_reminder(self, reminder_text, reminder_time):
+        print(f"Reminder: {reminder_text} at {reminder_time}")
+
+    def open_application(self, application_name):
+        try:
+            if "open" in application_name.lower():
+                application_name = application_name.lower().replace("open", "").strip()
+
+            system_platform = platform.system()
+            if system_platform == "Windows":
+                if "recycle bin" in application_name.lower():
+                    subprocess.run(["explorer", "shell:RecycleBinFolder"], shell=True, check=True)
+                else:
+                    subprocess.run(["start", application_name], shell=True, check=True)
+            elif system_platform == "Darwin":  # macOS
+                subprocess.run(["open", "-a", application_name], check=True)
+            elif system_platform == "Linux":
+                subprocess.run([application_name], shell=True, check=True)
+            else:
+                raise Exception(f"Unsupported platform: {system_platform}")
+
+            self.text_to_speech(f"Opening {application_name}.")
+        except subprocess.CalledProcessError as e:
+            print(f"Error opening {application_name}: {e}")
+            self.text_to_speech(f"Sorry, I couldn't open {application_name}. Error: {e}")
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            self.text_to_speech(f"Sorry, an unexpected error occurred: {e}")
+
+    def close_application(self, application_name):
+        try:
+            system_platform = platform.system()
+            app_name_lower = application_name.lower()
+
+            if system_platform == "Windows":
+                for proc in psutil.process_iter(['pid', 'name']):
+                    if app_name_lower in proc.info['name'].lower():
+                        subprocess.run(["taskkill", "/f", "/pid", str(proc.info['pid'])], shell=True, check=False)
+            elif system_platform == "Darwin":  # macOS
+                for proc in psutil.process_iter(['pid', 'name']):
+                    if app_name_lower in proc.info['name'].lower():
+                        subprocess.run(["kill", str(proc.info['pid'])], check=False)
+            elif system_platform == "Linux":
+                for proc in psutil.process_iter(['pid', 'name']):
+                    if app_name_lower in proc.info['name'].lower():
+                        subprocess.run(["kill", str(proc.info['pid'])], check=False)
+            else:
+                raise Exception(f"Unsupported platform: {system_platform}")
+
+            self.text_to_speech(f"Closing {application_name}.")
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            self.text_to_speech(f"Sorry, an unexpected error occurred: {e}")
+
+    def process_command(self, command):
+        if "stop" in command.lower() or "exit" in command.lower():
+            self.text_to_speech("Goodbye! Have a great day.")
+            return False
+
+        if "make a to-do list" in command:
+            self.create_todo_list()
+        elif "set a reminder" in command:
+            self.set_reminder()
+        elif "search Wikipedia for" in command.lower():
+            query = command.lower().replace("search wikipedia for", "").strip()
+            self.search_wikipedia(query)
+        elif "search the web for" in command.lower():
+            query = command.lower().replace("search the web for", "").strip()
+            self.search_web(query)
+        elif "search YouTube for" in command.lower():
+            query = command.lower().replace("search YouTube for", "").strip()
+            self.search_youtube(query)
+        elif "tell a joke" in command.lower():
+            self.tell_joke()
+        elif "open" in command.lower():
+            application_name = command.lower().replace("open", "").strip()
+            self.open_application(application_name)
+        elif "close" in command.lower():
+            application_name = command.lower().replace("close", "").strip()
+            self.close_application(application_name)
+        else:
+            excluded_commands = ["tell a joke", "make a to-do list", "set a reminder"]
+
+            if not any(ec in command for ec in excluded_commands):
+                self.process_general_command(command)
+
+def tell_joke(self):
+    if not self.in_assistant_mode:
+        joke_api_url = "https://v2.jokeapi.dev/joke/Any"
+
+        try:
+            response = requests.get(joke_api_url)
+            joke_data = response.json()
+
+            if joke_data["type"] == "single":
+                joke = joke_data["joke"]
+            elif joke_data["type"] == "twopart":
+                joke = f"{joke_data['setup']} {joke_data['delivery']}"
+            else:
+                joke = "I couldn't find any jokes at the moment."
+
+            print("Fetched Joke:", joke)  # Print the fetched joke to check if it's received
+            self.text_to_speech(joke)
+
+        except requests.RequestException as e:
+            print(f"Error fetching joke from the web: {e}")
+            self.text_to_speech("Sorry, I couldn't fetch a joke from the web at the moment.")
+    else:
+        self.text_to_speech("I can only tell jokes when not in assistant mode. Please exit assistant mode first.")
+
+
+    def main(self):
+        self.text_to_speech("Hello! I'm AVA, your AI voice assistant. How can I help you today?")
+
+        while True:
+            try:
+                user_input = self.get_audio()
+
+                if user_input:
+                    print("User Input:", user_input)
+
+                    if "stop" in user_input.lower() or "exit" in user_input.lower():
+                        self.text_to_speech("Goodbye! Have a great day.")
+                        break
+
+                    if "what can you do" in user_input.lower():
+                        self.text_to_speech("Here's a list of operations I can perform:")
+                        print("- Make a to-do list")
+                        print("- Set a reminder")
+                        print("- Search the web")
+                        print("- Tell a joke")
+                        print("- Chat with me and get responses from OpenAI's GPT-3.5 Turbo")
+                        print("- Open and close applications")
+                        print("- Stop or exit the assistant")
+                    else:
+                        self.process_command(user_input)
+
+                        if "open" in user_input.lower():
+                            application_name = user_input.lower().replace("open", "").strip()
+                            print("Opening application:", application_name)
+                            self.open_application(application_name)
+                        elif "close" in user_input.lower():
+                            application_name = user_input.lower().replace("close", "").strip()
+                            print("Closing application:", application_name)
+                            self.close_application(application_name)
+
+            except sr.UnknownValueError:
+                print("Speech Recognition could not understand audio.")
+                self.text_to_speech("Sorry, I didn't catch that. Could you please repeat?")
+            except sr.RequestError as e:
+                print(f"Speech Recognition request failed; {e}")
+                self.text_to_speech("Sorry, I'm having trouble with speech recognition. Please try again.")
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                self.text_to_speech("Sorry, an unexpected error occurred. Please try again.")
+
+if __name__ == "__main__":
+    assistant = AVAAssistant()
+    assistant.main()
