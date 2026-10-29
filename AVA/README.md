@@ -42,6 +42,7 @@ cd AVA
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+pip install -r requirements-voice.txt   # voice mode only (needs PortAudio); skip for --text
 
 python ava.py          # voice mode
 python ava.py --text   # text mode, no microphone needed

@@ -1,5 +1,4 @@
 SpeechRecognition>=3.10
-PyAudio>=0.2.13        # microphone access for SpeechRecognition (voice mode only)
 pyttsx3>=2.90
 Wikipedia-API>=0.6.0
 requests>=2.31

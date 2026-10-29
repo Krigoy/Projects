@@ -100,7 +100,15 @@ class AVAAssistant:
                 return "exit"
             return text.lower() or None
 
-        with sr.Microphone() as source:
+        try:
+            microphone = sr.Microphone()
+        except (OSError, AttributeError) as e:
+            raise RuntimeError(
+                "No microphone available (or PyAudio isn't installed). "
+                "Run with --text to type commands instead."
+            ) from e
+
+        with microphone as source:
             print(prompt)
             self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
             try:
@@ -193,7 +201,8 @@ class AVAAssistant:
             if task is None:
                 self.speak("I didn't catch that. Say the task again, or say done.")
                 continue
-            if task in {"done", "that's it", "finished"}:
+            # EXIT_WORDS also covers end of input in text mode, which listen() reports as "exit".
+            if task in {"done", "that's it", "finished"} or task in EXIT_WORDS:
                 break
             self.todo_list.append(task)
             self.speak(f"Added {task}.")
@@ -203,7 +212,8 @@ class AVAAssistant:
         if not self.todo_list:
             self.speak("Your to-do list is empty.")
             return
-        self.speak(f"You have {len(self.todo_list)} tasks.")
+        count = len(self.todo_list)
+        self.speak(f"You have {count} task{'' if count == 1 else 's'}.")
         for i, task in enumerate(self.todo_list, start=1):
             self.speak(f"{i}. {task}")
 
@@ -353,12 +363,13 @@ def parse_reminder_time(text: str, now: datetime.datetime | None = None) -> floa
     into seconds from now. Returns None if the text isn't understood.
     """
     now = now or datetime.datetime.now()
-    text = text.lower().replace(".", "").strip()
+    # Only strip the dots in "a.m." / "p.m." so decimals like "1.5 hours" survive.
+    text = re.sub(r"\b([ap])\.m\.?", r"\1m", text.lower()).strip()
 
-    rel = re.search(r"in (\d+) (second|minute|hour)s?", text)
+    rel = re.search(r"in (\d+(?:\.\d+)?) (second|minute|hour)s?", text)
     if rel:
-        n, unit = int(rel.group(1)), rel.group(2)
-        return float(n * {"second": 1, "minute": 60, "hour": 3600}[unit])
+        n, unit = float(rel.group(1)), rel.group(2)
+        return n * {"second": 1, "minute": 60, "hour": 3600}[unit]
 
     m = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", text)
     if not m:
